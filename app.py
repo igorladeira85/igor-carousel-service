@@ -10,14 +10,22 @@ app = Flask(__name__)
 # ── Fonts ─────────────────────────────────────────────────────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _FD   = os.path.join(_HERE, "fonts")
-F_PF_BLACK = os.path.join(_FD, "PlayfairDisplay-Black.ttf")
-F_PF_BOLD  = os.path.join(_FD, "PlayfairDisplay-Bold.ttf")
-F_PF_REG   = os.path.join(_FD, "PlayfairDisplay-Regular.ttf")
+F_PF  = os.path.join(_FD, "PlayfairDisplay.ttf")   # variable font
+
+# Weight constants
+W_BLACK  = 900
+W_BOLD   = 700
+W_REGULAR = 400
 
 
-def fnt(path, size):
+def fnt(path, size, weight=400):
     try:
-        return ImageFont.truetype(path, size)
+        font = ImageFont.truetype(path, size)
+        try:
+            font.set_variation_by_axes({"wght": weight})
+        except Exception:
+            pass
+        return font
     except Exception:
         return ImageFont.load_default()
 
@@ -86,7 +94,7 @@ def generate_slide(title, body, slide_num, total_slides,
     # ── Macrotema tag ─────────────────────────────────────────────────────────
     y = 210
     if macrotema:
-        f_tag = fnt(F_PF_BOLD, 22)
+        f_tag = fnt(F_PF, 22, W_BOLD)
         tb     = draw.textbbox((0, 0), macrotema, font=f_tag)
         tag_w  = tb[2] - tb[0] + 28
         draw.rectangle([(INNER, 118), (INNER + tag_w, 150)], fill=TAG_BG)
@@ -94,7 +102,7 @@ def generate_slide(title, body, slide_num, total_slides,
         y = 220
 
     # ── Watermark slide number ────────────────────────────────────────────────
-    f_wm = fnt(F_PF_BLACK, 340)
+    f_wm = fnt(F_PF, 340, W_BLACK)
     wm   = str(slide_num)
     wb   = draw.textbbox((0, 0), wm, font=f_wm)
     wm_w = wb[2] - wb[0]
@@ -102,7 +110,7 @@ def generate_slide(title, body, slide_num, total_slides,
     draw.text((W - PAD - wm_w + 30, H - PAD - wm_h + 60), wm, fill=WM_C, font=f_wm)
 
     # ── Title ──────────────────────────────────────────────────────────────────
-    f_title = fnt(F_PF_BOLD, 88)
+    f_title = fnt(F_PF, 88, W_BOLD)
     TEXT_W  = W - INNER - PAD
     y = draw_text_wrapped(draw, title, INNER, y, TEXT_W, f_title, ACCENT, line_spacing=6)
     y += 28
@@ -113,12 +121,12 @@ def generate_slide(title, body, slide_num, total_slides,
 
     # ── Body ──────────────────────────────────────────────────────────────────
     if body:
-        f_body = fnt(F_PF_REG, 40)
+        f_body = fnt(F_PF, 40, W_REGULAR)
         draw_text_wrapped(draw, body, INNER, y, TEXT_W, f_body, BODY_C, line_spacing=14)
 
     # ── Bottom rule + signature ───────────────────────────────────────────────
     draw.rectangle([(INNER, H - PAD - 54), (W - PAD, H - PAD - 53)], fill=DIM)
-    f_sig = fnt(F_PF_REG, 26)
+    f_sig = fnt(F_PF, 26, W_REGULAR)
     draw.text((INNER, H - PAD - 36), handle, fill=SIG_C, font=f_sig)
 
     return img
@@ -248,7 +256,7 @@ def _do_workflow(job_id, date_str, gh_token, ig_token, ig_user_id, imgbb_key):
         _jobs[job_id]["step"] = "aguardando Instagram processar"
         time.sleep(30)
         _jobs[job_id]["step"] = "publicando"
-        pub = requests.post(f"https://graph.instagram.com/v21.0/{ig_user_id}/media_publich",
+        pub = requests.post(f"https://graph.instagram.com/v21.0/{ig_user_id}/media_publish",
                             headers=ig_headers,
                             json={"creation_id": car_data["id"]})
         pub_data = pub.json()
