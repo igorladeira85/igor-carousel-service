@@ -127,6 +127,94 @@ def generate():
     return send_file(buf, mimetype="image/jpeg")
 
 
+@app.route("/run_workflow", methods=["POST"])
+def run_workflow():
+    import re, time
+    data       = request.get_json(force=True)
+    date_str   = data.get("date")          # "YYYY-MM-DD"
+    gh_token   = data.get("gh_token")
+    ig_token   = data.get("ig_token")
+    ig_user_id = data.get("ig_user_id")
+    imgbb_key  = data.get("imgbb_key")
+
+    # 1. Lista arquivos na pasta instagram
+    list_url = "https://api.github.com/repos/igorladeira85/igor-vault/contents/06%20projetos%2Fpersona-digital%2Finstagram"
+    gh_headers = {"Authorization": f"token {gh_token}", "Accept": "application/vnd.github.v3+json"}
+    files = requests.get(list_url, headers=gh_headers).json()
+    match = next((f for f in files if f["name"].startswith(date_str)), None)
+    if not match:
+        return jsonify({"error": f"Nenhum arquivo para {date_str}"}), 404
+
+    # 2. Lê conteúdo do arquivo
+    file_resp = requests.get(match["url"], headers=gh_headers).json()
+    decoded   = base64.b64decode(file_resp["content"]).decode("utf-8")
+
+    # 3. Parse frontmatter e slides
+    content, caption = decoded, ""
+    if content.startswith("---"):
+        end = content.index("---", 3)
+        fm  = content[3:end]
+        cap = re.search(r"caption:\s*(.+)", fm)
+        if cap:
+            caption = cap.group(1).strip()
+        content = content[end + 3:].strip()
+
+    slides = []
+    for section in content.split("\n---\n"):
+        t = section.strip()
+        if not t:
+            continue
+        tm = re.search(r"\*\*T[ií]tulo:\*\*\s*(.+)", t, re.I)
+        bm = re.search(r"\*\*Texto:\*\*\s*([\s\S]+)", t, re.I)
+        if tm:
+            slides.append({"title": tm.group(1).strip(), "body": re.sub(r"\n+", " ", bm.group(1).strip()) if bm else ""})
+
+    if not slides:
+        return jsonify({"error": "Nenhum slide encontrado"}), 400
+    if not caption:
+        caption = slides[0]["title"]
+
+    # 4. Gera imagens e cria containers Instagram
+    ig_headers = {"Content-Type": "application/json", "Authorization": f"Bearer {ig_token}"}
+    container_ids = []
+    for i, slide in enumerate(slides):
+        img = generate_slide(slide["title"], slide["body"], i + 1, len(slides))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=95)
+        buf.seek(0)
+        b64 = base64.b64encode(buf.read()).decode("utf-8")
+        up  = requests.post("https://api.imgbb.com/1/upload", data={"key": imgbb_key, "image": b64, "expiration": 604800})
+        if not up.ok:
+            return jsonify({"error": f"ImgBB slide {i+1}", "detail": up.text}), 500
+        img_url = up.json()["data"]["url"]
+
+        ig = requests.post(f"https://graph.instagram.com/v21.0/{ig_user_id}/media",
+                           headers=ig_headers,
+                           json={"image_url": img_url, "is_carousel_item": True})
+        ig_data = ig.json()
+        if "id" not in ig_data:
+            return jsonify({"error": f"Container slide {i+1}", "detail": ig_data}), 500
+        container_ids.append(ig_data["id"])
+
+    # 5. Cria carrossel
+    car = requests.post(f"https://graph.instagram.com/v21.0/{ig_user_id}/media",
+                        headers=ig_headers,
+                        json={"media_type": "CAROUSEL", "children": ",".join(container_ids), "caption": caption})
+    car_data = car.json()
+    if "id" not in car_data:
+        return jsonify({"error": "Criar carrossel", "detail": car_data}), 500
+
+    # 6. Aguarda processamento
+    time.sleep(30)
+
+    # 7. Publica
+    pub = requests.post(f"https://graph.instagram.com/v21.0/{ig_user_id}/media_publish",
+                        headers=ig_headers,
+                        json={"creation_id": car_data["id"]})
+    pub_data = pub.json()
+    return jsonify({"status": "publicado", "post_id": pub_data.get("id"), "slides": len(slides), "caption": caption})
+
+
 @app.route("/health")
 def health():
     return jsonify({"status": "ok"})
