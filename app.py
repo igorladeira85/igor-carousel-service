@@ -7,14 +7,14 @@ import base64
 
 app = Flask(__name__)
 
-# ── Palette ───────────────────────────────────────────────────────────────────
+# ── Palette ───────────────────────────────────────────────────────────────────────────────
 BG        = (9, 9, 20)
 GOLD      = (242, 185, 30)
 GOLD_DIM  = (90, 68, 10)
 WHITE     = (238, 238, 248)
 MUTED     = (140, 140, 165)
 
-# ── Fonts (Poppins bundled in /fonts) ────────────────────────────────────────
+# ── Fonts (Poppins bundled in /fonts) ────────────────────────────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _FD   = os.path.join(_HERE, "fonts")
 F_BOLD = os.path.join(_FD, "Poppins-Bold.ttf")
@@ -62,19 +62,15 @@ def generate_slide(title, body, slide_num, total_slides, handle="@igorladeira85"
     PAD   = 80    # outer padding
     INNER = 116   # content x start (after accent bar)
 
-    # ── Left gold accent bar ──────────────────────────────────────────────────
     draw.rectangle([(PAD, PAD), (PAD + 8, H - PAD)], fill=GOLD)
 
-    # ── Top-right: slide counter ──────────────────────────────────────────────
     f_counter = fnt(F_SEMI, 28)
     counter   = f"{slide_num} / {total_slides}"
     cb = draw.textbbox((0, 0), counter, font=f_counter)
     draw.text((W - PAD - (cb[2] - cb[0]), PAD + 8), counter, fill=GOLD, font=f_counter)
 
-    # ── Subtle top divider ────────────────────────────────────────────────────
     draw.rectangle([(INNER, PAD + 44), (W - PAD, PAD + 47)], fill=GOLD_DIM)
 
-    # ── Title ─────────────────────────────────────────────────────────────────
     f_title  = fnt(F_BOLD, 76)
     TEXT_W   = W - INNER - PAD
     y        = PAD + 90
@@ -82,15 +78,12 @@ def generate_slide(title, body, slide_num, total_slides, handle="@igorladeira85"
     y = draw_text_wrapped(draw, title, INNER, y, TEXT_W, f_title, GOLD, line_spacing=10)
     y += 28
 
-    # ── Gold accent dash ──────────────────────────────────────────────────────
     draw.rectangle([(INNER, y), (INNER + 72, y + 5)], fill=GOLD)
     y += 44
 
-    # ── Body ──────────────────────────────────────────────────────────────────
     f_body = fnt(F_REG, 38)
     y = draw_text_wrapped(draw, body, INNER, y, TEXT_W, f_body, WHITE, line_spacing=14)
 
-    # ── Bottom area ───────────────────────────────────────────────────────────
     f_handle = fnt(F_SEMI, 28)
     draw.rectangle([(INNER, H - PAD - 52), (INNER + 220, H - PAD - 49)], fill=GOLD_DIM)
     draw.text((INNER, H - PAD - 38), handle, fill=MUTED, font=f_handle)
@@ -127,92 +120,117 @@ def generate():
     return send_file(buf, mimetype="image/jpeg")
 
 
+_jobs = {}
+
+
+def _do_workflow(job_id, date_str, gh_token, ig_token, ig_user_id, imgbb_key):
+    import re, time
+    try:
+        list_url = "https://api.github.com/repos/igorladeira85/igor-vault/contents/06%20projetos%2Fpersona-digital%2Finstagram"
+        gh_headers = {"Authorization": f"token {gh_token}", "Accept": "application/vnd.github.v3+json"}
+        files = requests.get(list_url, headers=gh_headers).json()
+        match = next((f for f in files if f["name"].startswith(date_str)), None)
+        if not match:
+            _jobs[job_id] = {"status": "error", "error": f"Nenhum arquivo para {date_str}"}
+            return
+
+        file_resp = requests.get(match["url"], headers=gh_headers).json()
+        decoded   = base64.b64decode(file_resp["content"]).decode("utf-8")
+
+        content, caption = decoded, ""
+        if content.startswith("---"):
+            end = content.index("---", 3)
+            fm  = content[3:end]
+            cap = re.search(r"caption:\s*(.+)", fm)
+            if cap:
+                caption = cap.group(1).strip()
+            content = content[end + 3:].strip()
+
+        slides = []
+        for section in content.split("\n---\n"):
+            t = section.strip()
+            if not t:
+                continue
+            tm = re.search(r"\*\*T[ii]tulo:\*\*\s*(.+)", t, re.I)
+            bm = re.search(r"\*\*Texto:\*\*\s*([\s\S]+)", t, re.I)
+            if tm:
+                slides.append({"title": tm.group(1).strip(), "body": re.sub(r"\n+", " ", bm.group(1).strip()) if bm else ""})
+
+        if not slides:
+            _jobs[job_id] = {"status": "error", "error": "Nenhum slide encontrado"}
+            return
+        if not caption:
+            caption = slides[0]["title"]
+
+        ig_headers = {"Content-Type": "application/json", "Authorization": f"Bearer {ig_token}"}
+        container_ids = []
+        for i, slide in enumerate(slides):
+            _jobs[job_id]["step"] = f"slide {i+1}/{len(slides)}"
+            img = generate_slide(slide["title"], slide["body"], i + 1, len(slides))
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=95)
+            buf.seek(0)
+            b64 = base64.b64encode(buf.read()).decode("utf-8")
+            up  = requests.post("https://api.imgbb.com/1/upload", data={"key": imgbb_key, "image": b64, "expiration": 604800})
+            if not up.ok:
+                _jobs[job_id] = {"status": "error", "error": f"ImgBB slide {i+1}", "detail": up.text}
+                return
+            img_url = up.json()["data"]["url"]
+
+            ig = requests.post(f"https://graph.instagram.com/v21.0/{ig_user_id}/media",
+                               headers=ig_headers,
+                               json={"image_url": img_url, "is_carousel_item": True})
+            ig_data = ig.json()
+            if "id" not in ig_data:
+                _jobs[job_id] = {"status": "error", "error": f"Container slide {i+1}", "detail": ig_data}
+                return
+            container_ids.append(ig_data["id"])
+
+        _jobs[job_id]["step"] = "criando carrossel"
+        car = requests.post(f"https://graph.instagram.com/v21.0/{ig_user_id}/media",
+                            headers=ig_headers,
+                            json={"media_type": "CAROUSEL", "children": ",".join(container_ids), "caption": caption})
+        car_data = car.json()
+        if "id" not in car_data:
+            _jobs[job_id] = {"status": "error", "error": "Criar carrossel", "detail": car_data}
+            return
+
+        _jobs[job_id]["step"] = "aguardando Instagram processar"
+        time.sleep(30)
+
+        _jobs[job_id]["step"] = "publicando"
+        pub = requests.post(f"https://graph.instagram.com/v21.0/{ig_user_id}/media_publish",
+                            headers=ig_headers,
+                            json={"creation_id": car_data["id"]})
+        pub_data = pub.json()
+        _jobs[job_id] = {"status": "publicado", "post_id": pub_data.get("id"), "slides": len(slides), "caption": caption}
+
+    except Exception as e:
+        _jobs[job_id] = {"status": "error", "error": str(e)}
+
+
 @app.route("/run_workflow", methods=["POST"])
 def run_workflow():
-    import re, time
+    import threading, time
     data       = request.get_json(force=True)
-    date_str   = data.get("date")          # "YYYY-MM-DD"
+    date_str   = data.get("date")
     gh_token   = data.get("gh_token")
     ig_token   = data.get("ig_token")
     ig_user_id = data.get("ig_user_id")
     imgbb_key  = data.get("imgbb_key")
 
-    # 1. Lista arquivos na pasta instagram
-    list_url = "https://api.github.com/repos/igorladeira85/igor-vault/contents/06%20projetos%2Fpersona-digital%2Finstagram"
-    gh_headers = {"Authorization": f"token {gh_token}", "Accept": "application/vnd.github.v3+json"}
-    files = requests.get(list_url, headers=gh_headers).json()
-    match = next((f for f in files if f["name"].startswith(date_str)), None)
-    if not match:
-        return jsonify({"error": f"Nenhum arquivo para {date_str}"}), 404
+    job_id = str(int(time.time()))
+    _jobs[job_id] = {"status": "running", "step": "iniciando"}
+    t = threading.Thread(target=_do_workflow,
+                         args=(job_id, date_str, gh_token, ig_token, ig_user_id, imgbb_key),
+                         daemon=True)
+    t.start()
+    return jsonify({"job_id": job_id, "status": "started"})
 
-    # 2. Lê conteúdo do arquivo
-    file_resp = requests.get(match["url"], headers=gh_headers).json()
-    decoded   = base64.b64decode(file_resp["content"]).decode("utf-8")
 
-    # 3. Parse frontmatter e slides
-    content, caption = decoded, ""
-    if content.startswith("---"):
-        end = content.index("---", 3)
-        fm  = content[3:end]
-        cap = re.search(r"caption:\s*(.+)", fm)
-        if cap:
-            caption = cap.group(1).strip()
-        content = content[end + 3:].strip()
-
-    slides = []
-    for section in content.split("\n---\n"):
-        t = section.strip()
-        if not t:
-            continue
-        tm = re.search(r"\*\*T[ií]tulo:\*\*\s*(.+)", t, re.I)
-        bm = re.search(r"\*\*Texto:\*\*\s*([\s\S]+)", t, re.I)
-        if tm:
-            slides.append({"title": tm.group(1).strip(), "body": re.sub(r"\n+", " ", bm.group(1).strip()) if bm else ""})
-
-    if not slides:
-        return jsonify({"error": "Nenhum slide encontrado"}), 400
-    if not caption:
-        caption = slides[0]["title"]
-
-    # 4. Gera imagens e cria containers Instagram
-    ig_headers = {"Content-Type": "application/json", "Authorization": f"Bearer {ig_token}"}
-    container_ids = []
-    for i, slide in enumerate(slides):
-        img = generate_slide(slide["title"], slide["body"], i + 1, len(slides))
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=95)
-        buf.seek(0)
-        b64 = base64.b64encode(buf.read()).decode("utf-8")
-        up  = requests.post("https://api.imgbb.com/1/upload", data={"key": imgbb_key, "image": b64, "expiration": 604800})
-        if not up.ok:
-            return jsonify({"error": f"ImgBB slide {i+1}", "detail": up.text}), 500
-        img_url = up.json()["data"]["url"]
-
-        ig = requests.post(f"https://graph.instagram.com/v21.0/{ig_user_id}/media",
-                           headers=ig_headers,
-                           json={"image_url": img_url, "is_carousel_item": True})
-        ig_data = ig.json()
-        if "id" not in ig_data:
-            return jsonify({"error": f"Container slide {i+1}", "detail": ig_data}), 500
-        container_ids.append(ig_data["id"])
-
-    # 5. Cria carrossel
-    car = requests.post(f"https://graph.instagram.com/v21.0/{ig_user_id}/media",
-                        headers=ig_headers,
-                        json={"media_type": "CAROUSEL", "children": ",".join(container_ids), "caption": caption})
-    car_data = car.json()
-    if "id" not in car_data:
-        return jsonify({"error": "Criar carrossel", "detail": car_data}), 500
-
-    # 6. Aguarda processamento
-    time.sleep(30)
-
-    # 7. Publica
-    pub = requests.post(f"https://graph.instagram.com/v21.0/{ig_user_id}/media_publish",
-                        headers=ig_headers,
-                        json={"creation_id": car_data["id"]})
-    pub_data = pub.json()
-    return jsonify({"status": "publicado", "post_id": pub_data.get("id"), "slides": len(slides), "caption": caption})
+@app.route("/status/<job_id>")
+def job_status(job_id):
+    return jsonify(_jobs.get(job_id, {"status": "not_found"}))
 
 
 @app.route("/health")
