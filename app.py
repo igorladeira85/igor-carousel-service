@@ -7,14 +7,14 @@ import base64
 
 app = Flask(__name__)
 
-# ── Palette ───────────────────────────────────────────────────────────────────────────────
+# ── Palette ───────────────────────────────────────────────────────────────────
 BG        = (9, 9, 20)
 GOLD      = (242, 185, 30)
 GOLD_DIM  = (90, 68, 10)
 WHITE     = (238, 238, 248)
 MUTED     = (140, 140, 165)
 
-# ── Fonts (Poppins bundled in /fonts) ────────────────────────────────────────────
+# ── Fonts (Poppins bundled in /fonts) ────────────────────────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _FD   = os.path.join(_HERE, "fonts")
 F_BOLD = os.path.join(_FD, "Poppins-Bold.ttf")
@@ -62,15 +62,19 @@ def generate_slide(title, body, slide_num, total_slides, handle="@igorladeira85"
     PAD   = 80    # outer padding
     INNER = 116   # content x start (after accent bar)
 
+    # ── Left gold accent bar ──────────────────────────────────────────────────
     draw.rectangle([(PAD, PAD), (PAD + 8, H - PAD)], fill=GOLD)
 
+    # ── Top-right: slide counter ──────────────────────────────────────────────
     f_counter = fnt(F_SEMI, 28)
     counter   = f"{slide_num} / {total_slides}"
     cb = draw.textbbox((0, 0), counter, font=f_counter)
     draw.text((W - PAD - (cb[2] - cb[0]), PAD + 8), counter, fill=GOLD, font=f_counter)
 
+    # ── Subtle top divider ────────────────────────────────────────────────────
     draw.rectangle([(INNER, PAD + 44), (W - PAD, PAD + 47)], fill=GOLD_DIM)
 
+    # ── Title ─────────────────────────────────────────────────────────────────
     f_title  = fnt(F_BOLD, 76)
     TEXT_W   = W - INNER - PAD
     y        = PAD + 90
@@ -78,12 +82,15 @@ def generate_slide(title, body, slide_num, total_slides, handle="@igorladeira85"
     y = draw_text_wrapped(draw, title, INNER, y, TEXT_W, f_title, GOLD, line_spacing=10)
     y += 28
 
+    # ── Gold accent dash ──────────────────────────────────────────────────────
     draw.rectangle([(INNER, y), (INNER + 72, y + 5)], fill=GOLD)
     y += 44
 
+    # ── Body ──────────────────────────────────────────────────────────────────
     f_body = fnt(F_REG, 38)
     y = draw_text_wrapped(draw, body, INNER, y, TEXT_W, f_body, WHITE, line_spacing=14)
 
+    # ── Bottom area ───────────────────────────────────────────────────────────
     f_handle = fnt(F_SEMI, 28)
     draw.rectangle([(INNER, H - PAD - 52), (INNER + 220, H - PAD - 49)], fill=GOLD_DIM)
     draw.text((INNER, H - PAD - 38), handle, fill=MUTED, font=f_handle)
@@ -126,6 +133,7 @@ _jobs = {}
 def _do_workflow(job_id, date_str, gh_token, ig_token, ig_user_id, imgbb_key):
     import re, time
     try:
+        # 1. Lista arquivos na pasta instagram
         list_url = "https://api.github.com/repos/igorladeira85/igor-vault/contents/06%20projetos%2Fpersona-digital%2Finstagram"
         gh_headers = {"Authorization": f"token {gh_token}", "Accept": "application/vnd.github.v3+json"}
         files = requests.get(list_url, headers=gh_headers).json()
@@ -134,9 +142,11 @@ def _do_workflow(job_id, date_str, gh_token, ig_token, ig_user_id, imgbb_key):
             _jobs[job_id] = {"status": "error", "error": f"Nenhum arquivo para {date_str}"}
             return
 
+        # 2. Lê conteúdo do arquivo
         file_resp = requests.get(match["url"], headers=gh_headers).json()
         decoded   = base64.b64decode(file_resp["content"]).decode("utf-8")
 
+        # 3. Parse frontmatter e slides
         content, caption = decoded, ""
         if content.startswith("---"):
             end = content.index("---", 3)
@@ -151,7 +161,7 @@ def _do_workflow(job_id, date_str, gh_token, ig_token, ig_user_id, imgbb_key):
             t = section.strip()
             if not t:
                 continue
-            tm = re.search(r"\*\*T[ii]tulo:\*\*\s*(.+)", t, re.I)
+            tm = re.search(r"\*\*T[ií]tulo:\*\*\s*(.+)", t, re.I)
             bm = re.search(r"\*\*Texto:\*\*\s*([\s\S]+)", t, re.I)
             if tm:
                 slides.append({"title": tm.group(1).strip(), "body": re.sub(r"\n+", " ", bm.group(1).strip()) if bm else ""})
@@ -162,6 +172,7 @@ def _do_workflow(job_id, date_str, gh_token, ig_token, ig_user_id, imgbb_key):
         if not caption:
             caption = slides[0]["title"]
 
+        # 4. Gera imagens e cria containers Instagram
         ig_headers = {"Content-Type": "application/json", "Authorization": f"Bearer {ig_token}"}
         container_ids = []
         for i, slide in enumerate(slides):
@@ -186,6 +197,7 @@ def _do_workflow(job_id, date_str, gh_token, ig_token, ig_user_id, imgbb_key):
                 return
             container_ids.append(ig_data["id"])
 
+        # 5. Cria carrossel
         _jobs[job_id]["step"] = "criando carrossel"
         car = requests.post(f"https://graph.instagram.com/v21.0/{ig_user_id}/media",
                             headers=ig_headers,
@@ -195,9 +207,11 @@ def _do_workflow(job_id, date_str, gh_token, ig_token, ig_user_id, imgbb_key):
             _jobs[job_id] = {"status": "error", "error": "Criar carrossel", "detail": car_data}
             return
 
+        # 6. Aguarda processamento
         _jobs[job_id]["step"] = "aguardando Instagram processar"
         time.sleep(30)
 
+        # 7. Publica
         _jobs[job_id]["step"] = "publicando"
         pub = requests.post(f"https://graph.instagram.com/v21.0/{ig_user_id}/media_publish",
                             headers=ig_headers,
