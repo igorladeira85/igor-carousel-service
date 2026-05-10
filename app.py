@@ -7,7 +7,7 @@ import base64
 
 app = Flask(__name__)
 
-# ── Fonts ────────────────────────────────────────────────────────────────────
+# ── Fonts ─────────────────────────────────────────────────────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _FD   = os.path.join(_HERE, "fonts")
 F_PF  = os.path.join(_FD, "PlayfairDisplay.ttf")   # variable font
@@ -252,13 +252,15 @@ def make_slide(layout, title, body, items, slide_num, total_slides, style, macro
     if layout == "lista":
         if not items:
             items = parse_items(body)
-        return generate_slide_lista(title, items, slide_num, total_slides, style, macrotema)
+        if items:
+            return generate_slide_lista(title, items, slide_num, total_slides, style, macrotema)
     elif layout == "grid":
         if not items:
             items = parse_items(body)
-        return generate_slide_grid(title, items, slide_num, total_slides, style, macrotema)
-    else:
-        return generate_slide(title, body, slide_num, total_slides, style, macrotema)
+        if items:
+            return generate_slide_grid(title, items, slide_num, total_slides, style, macrotema)
+    # fallback: slides sem items usam layout default
+    return generate_slide(title, body, slide_num, total_slides, style, macrotema)
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
