@@ -51,18 +51,18 @@ threading.Thread(target=_prefetch, daemon=True).start()
 def _theme(style):
     if style == "claro":
         return dict(
-            BG=(245, 240, 232),          # #F5F0E8 bege
-            ACCENT=(224, 92, 26),        # #E05C1A laranja terracota
-            ACCENT_LIGHT=(245, 220, 205),# laranja muito claro para watermark
-            TITLE_C=(26, 26, 26),        # quase preto
-            BODY_C=(50, 48, 44),         # cinza escuro
-            MUTED=(140, 128, 106),
-            CARD_BG=(255, 253, 250),     # branco levemente quente
-            TAG_BG=(224, 92, 26),
-            TAG_FG=(255, 253, 250),
-            DIVIDER=(224, 92, 26),
-            FOOTER_C=(160, 148, 130),
-            NUM_C=(235, 215, 200),       # número watermark
+            BG=(245, 237, 220),          # #F5EDDC bege quente
+            ACCENT=(122, 59, 28),        # #7A3B1C marrom terracota escuro
+            ACCENT_LIGHT=(210, 185, 165),# terracota muito claro para watermark
+            TITLE_C=(55, 25, 8),         # #371908 marrom muito escuro
+            BODY_C=(75, 45, 25),         # marrom escuro
+            MUTED=(148, 112, 88),        # marrom médio acinzentado
+            CARD_BG=(252, 247, 240),     # branco levemente quente
+            TAG_BG=(122, 59, 28),
+            TAG_FG=(252, 247, 240),
+            DIVIDER=(122, 59, 28),
+            FOOTER_C=(160, 125, 100),
+            NUM_C=(225, 208, 192),       # número watermark
         )
     else:  # escuro
         return dict(
@@ -82,7 +82,6 @@ def _theme(style):
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 def parse_rich(text):
-    """Split text into [(segment, is_bold), ...] based on **markers**."""
     parts = []
     bold = False
     buf = ""
@@ -102,9 +101,7 @@ def parse_rich(text):
     return parts
 
 def draw_text_rich(draw, text, x, y, max_width, font_normal, font_bold, fill, line_spacing=16):
-    """Word-wrap text with **bold** inline markers."""
     segments = parse_rich(text)
-    # Flatten into tokens: (word, is_bold, has_trailing_space)
     tokens = []
     for seg, is_bold in segments:
         words = seg.split(" ")
@@ -114,8 +111,7 @@ def draw_text_rich(draw, text, x, y, max_width, font_normal, font_bold, fill, li
             if j < len(words) - 1:
                 tokens.append((" ", is_bold))
 
-    # Build lines
-    lines = []        # list of [(word, is_bold)]
+    lines = []
     current = []
     current_w = 0
     for (word, is_bold) in tokens:
@@ -176,7 +172,7 @@ def draw_rounded_rect(draw, xy, radius, fill):
     draw.ellipse([x0, y1 - 2*radius, x0 + 2*radius, y1], fill=fill)
     draw.ellipse([x1 - 2*radius, y1 - 2*radius, x1, y1], fill=fill)
 
-# ── Layout: default (1 pergunta/ideia por slide) ───────────────────────────────
+# ── Layout: default ────────────────────────────────────────────────────────────
 def generate_slide(title, body, slide_num, total_slides,
                    style="claro", macrotema="", handle="Igor Ladeira"):
     W, H = 1080, 1080
@@ -185,13 +181,13 @@ def generate_slide(title, body, slide_num, total_slides,
     img = Image.new("RGB", (W, H), t["BG"])
     draw = ImageDraw.Draw(img)
 
-    PAD   = 72   # margem externa
-    INNER = 108  # início do conteúdo
+    PAD   = 72
+    INNER = 108
 
-    # ── Barra lateral laranja (esquerda) ──────────────────────────────────────
+    # Barra lateral esquerda
     draw.rectangle([(PAD, PAD), (PAD + 7, H - PAD)], fill=t["ACCENT"])
 
-    # ── Número watermark (grande, fundo) ──────────────────────────────────────
+    # Número watermark
     f_wm = fnt("playfair", 420, 900)
     wm = str(slide_num)
     wb = draw.textbbox((0, 0), wm, font=f_wm)
@@ -201,7 +197,7 @@ def generate_slide(title, body, slide_num, total_slides,
 
     y = PAD + 40
 
-    # ── Macrotema (badge laranja arredondado) ─────────────────────────────────
+    # Badge macrotema
     if macrotema:
         f_tag = fnt("inter", 24, 700)
         tb = draw.textbbox((0, 0), macrotema.upper(), font=f_tag)
@@ -213,27 +209,22 @@ def generate_slide(title, body, slide_num, total_slides,
     else:
         y += 10
 
-    # ── Linha separadora topo ─────────────────────────────────────────────────
     draw.rectangle([(INNER, y), (W - PAD, y + 1)], fill=t["MUTED"])
     y += 20
 
-    # ── Título ────────────────────────────────────────────────────────────────
     TEXT_W = W - INNER - PAD - 20
     f_title = fnt("playfair", 82, 800)
     y = draw_text_wrapped(draw, title, INNER, y, TEXT_W, f_title, t["TITLE_C"], line_spacing=10)
     y += 24
 
-    # ── Divisor laranja curto ──────────────────────────────────────────────────
     draw.rectangle([(INNER, y), (INNER + 72, y + 5)], fill=t["ACCENT"])
     y += 40
 
-    # ── Corpo ─────────────────────────────────────────────────────────────────
     if body:
         f_body      = fnt("inter", 40, 400)
         f_body_bold = fnt("inter", 40, 700)
         y = draw_text_rich(draw, body, INNER, y, TEXT_W, f_body, f_body_bold, t["BODY_C"], line_spacing=16)
 
-    # ── Rodapé ────────────────────────────────────────────────────────────────
     footer_y = H - PAD - 50
     draw.rectangle([(INNER, footer_y), (W - PAD, footer_y + 1)], fill=t["ACCENT"])
     f_footer = fnt("inter", 26, 400)
@@ -281,7 +272,6 @@ def generate_slide_lista(title, items, slide_num, total_slides,
         i_title = item.get("title", "")
         i_body  = item.get("body", "")
 
-        # Número em círculo laranja
         nb = draw.textbbox((0, 0), n_text, font=f_num)
         r = 22
         cx, cy = INNER + r, y + r
