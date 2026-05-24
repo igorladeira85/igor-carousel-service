@@ -229,6 +229,10 @@ def generate_slide(title, body, slide_num, total_slides,
     draw.rectangle([(INNER, footer_y), (W - PAD, footer_y + 1)], fill=t["ACCENT"])
     f_footer = fnt("inter", 26, 400)
     draw.text((INNER, footer_y + 12), handle, fill=t["FOOTER_C"], font=f_footer)
+    ig_handle = "@igorladeira85"
+    hb_ig = draw.textbbox((0, 0), ig_handle, font=f_footer)
+    ig_w = hb_ig[2] - hb_ig[0]
+    draw.text((W - PAD - ig_w, footer_y + 12), ig_handle, fill=t["FOOTER_C"], font=f_footer)
 
     return img
 
@@ -290,6 +294,10 @@ def generate_slide_lista(title, items, slide_num, total_slides,
     draw.rectangle([(INNER, footer_y), (W - PAD, footer_y + 1)], fill=t["ACCENT"])
     f_footer = fnt("inter", 26, 400)
     draw.text((INNER, footer_y + 12), handle, fill=t["FOOTER_C"], font=f_footer)
+    ig_handle = "@igorladeira85"
+    hb_ig = draw.textbbox((0, 0), ig_handle, font=f_footer)
+    ig_w = hb_ig[2] - hb_ig[0]
+    draw.text((W - PAD - ig_w, footer_y + 12), ig_handle, fill=t["FOOTER_C"], font=f_footer)
 
     return img
 
@@ -355,6 +363,10 @@ def generate_slide_grid(title, items, slide_num, total_slides,
     draw.rectangle([(INNER, footer_y), (W - PAD, footer_y + 1)], fill=t["ACCENT"])
     f_footer = fnt("inter", 26, 400)
     draw.text((INNER, footer_y + 12), handle, fill=t["FOOTER_C"], font=f_footer)
+    ig_handle = "@igorladeira85"
+    hb_ig = draw.textbbox((0, 0), ig_handle, font=f_footer)
+    ig_w = hb_ig[2] - hb_ig[0]
+    draw.text((W - PAD - ig_w, footer_y + 12), ig_handle, fill=t["FOOTER_C"], font=f_footer)
 
     return img
 
