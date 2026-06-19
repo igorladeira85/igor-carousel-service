@@ -51,36 +51,47 @@ threading.Thread(target=_prefetch, daemon=True).start()
 def _theme(style):
     if style == "claro":
         return dict(
-            BG=(245, 237, 220),          # #F5EDDC bege quente
-            ACCENT=(122, 59, 28),        # #7A3B1C marrom terracota escuro
-            ACCENT_LIGHT=(210, 185, 165),# terracota muito claro para watermark
-            TITLE_C=(55, 25, 8),         # #371908 marrom muito escuro
-            BODY_C=(75, 45, 25),         # marrom escuro
-            MUTED=(148, 112, 88),        # marrom médio acinzentado
-            CARD_BG=(252, 247, 240),     # branco levemente quente
-            TAG_BG=(122, 59, 28),
-            TAG_FG=(252, 247, 240),
-            DIVIDER=(122, 59, 28),
-            FOOTER_C=(160, 125, 100),
-            NUM_C=(225, 208, 192),       # número watermark
+            BG_START=(249, 246, 240),    # Creme muito claro
+            BG_END=(242, 235, 224),      # Bege quente suave
+            ACCENT=(165, 75, 36),        # Terracota elegante
+            ACCENT_LIGHT=(235, 215, 200),# Terracota pastel
+            TITLE_C=(45, 25, 16),        # Espresso profundo
+            BODY_C=(60, 40, 30),         # Espresso suave
+            MUTED=(180, 160, 145),       # Areia suave
+            CARD_BG=(252, 250, 246),     # Off-white limpo
+            TAG_BG=(165, 75, 36),
+            TAG_FG=(252, 250, 246),
+            DIVIDER=(220, 210, 195),
+            FOOTER_C=(150, 130, 115),
         )
     else:  # escuro
         return dict(
-            BG=(9, 9, 26),
-            ACCENT=(242, 185, 30),
-            ACCENT_LIGHT=(50, 40, 10),
-            TITLE_C=(238, 238, 248),
-            BODY_C=(200, 200, 220),
-            MUTED=(140, 140, 165),
-            CARD_BG=(20, 20, 45),
-            TAG_BG=(242, 185, 30),
-            TAG_FG=(9, 9, 26),
-            DIVIDER=(242, 185, 30),
-            FOOTER_C=(90, 85, 110),
-            NUM_C=(25, 25, 50),
+            BG_START=(14, 14, 38),       # Azul noite profundo
+            BG_END=(5, 5, 20),           # Escuro quase preto
+            ACCENT=(212, 175, 55),       # Dourado rico
+            ACCENT_LIGHT=(55, 45, 20),   # Dourado muito escuro
+            TITLE_C=(255, 255, 255),
+            BODY_C=(220, 220, 230),
+            MUTED=(120, 120, 145),
+            CARD_BG=(22, 22, 56),
+            TAG_BG=(212, 175, 55),
+            TAG_FG=(5, 5, 20),
+            DIVIDER=(40, 40, 75),
+            FOOTER_C=(96, 96, 128),
         )
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+def draw_gradient(draw, W, H, c1, c2):
+    for y in range(H):
+        t = y / H
+        r = int(c1[0] + (c2[0] - c1[0]) * t)
+        g = int(c1[1] + (c2[1] - c1[1]) * t)
+        b = int(c1[2] + (c2[2] - c1[2]) * t)
+        draw.line([(0, y), (W, y)], fill=(r, g, b))
+
+def draw_diamond(draw, cx, cy, r, fill):
+    draw.polygon([(cx, cy - r), (cx + r, cy), (cx, cy + r), (cx - r, cy)], fill=fill)
+
 def parse_rich(text):
     parts = []
     bold = False
@@ -163,14 +174,14 @@ def draw_text_wrapped(draw, text, x, y, max_width, font, fill, line_spacing=10):
         y += (bbox[3] - bbox[1]) + line_spacing
     return y
 
-def draw_rounded_rect(draw, xy, radius, fill):
+def draw_rounded_rect(draw, xy, radius, fill, outline=None, width=1):
     x0, y0, x1, y1 = xy
-    draw.rectangle([x0 + radius, y0, x1 - radius, y1], fill=fill)
-    draw.rectangle([x0, y0 + radius, x1, y1 - radius], fill=fill)
-    draw.ellipse([x0, y0, x0 + 2*radius, y0 + 2*radius], fill=fill)
-    draw.ellipse([x1 - 2*radius, y0, x1, y0 + 2*radius], fill=fill)
-    draw.ellipse([x0, y1 - 2*radius, x0 + 2*radius, y1], fill=fill)
-    draw.ellipse([x1 - 2*radius, y1 - 2*radius, x1, y1], fill=fill)
+    draw.rectangle([x0 + radius, y0, x1 - radius, y1], fill=fill, outline=outline, width=width)
+    draw.rectangle([x0, y0 + radius, x1, y1 - radius], fill=fill, outline=outline, width=width)
+    draw.ellipse([x0, y0, x0 + 2*radius, y0 + 2*radius], fill=fill, outline=outline, width=width)
+    draw.ellipse([x1 - 2*radius, y0, x1, y0 + 2*radius], fill=fill, outline=outline, width=width)
+    draw.ellipse([x0, y1 - 2*radius, x0 + 2*radius, y1], fill=fill, outline=outline, width=width)
+    draw.ellipse([x1 - 2*radius, y1 - 2*radius, x1, y1], fill=fill, outline=outline, width=width)
 
 # ── Layout: default ────────────────────────────────────────────────────────────
 def generate_slide(title, body, slide_num, total_slides,
@@ -178,65 +189,69 @@ def generate_slide(title, body, slide_num, total_slides,
     W, H = 1080, 1080
     t = _theme(style)
 
-    img = Image.new("RGB", (W, H), t["BG"])
+    img = Image.new("RGB", (W, H))
     draw = ImageDraw.Draw(img)
+    draw_gradient(draw, W, H, t["BG_START"], t["BG_END"])
 
     PAD   = 72
     INNER = 108
 
-    # Barra lateral esquerda
-    draw.rectangle([(PAD, PAD), (PAD + 7, H - PAD)], fill=t["ACCENT"])
+    # Linha vertical esquerda sutil (1px)
+    draw.line([(PAD, PAD + 40), (PAD, H - PAD - 60)], fill=t["MUTED"], width=1)
 
-    # Número watermark
-    f_wm = fnt("playfair", 420, 900)
-    wm = str(slide_num)
-    wb = draw.textbbox((0, 0), wm, font=f_wm)
-    wm_x = W - PAD - (wb[2] - wb[0]) + 20
-    wm_y = H - PAD - (wb[3] - wb[1]) + 40
-    draw.text((wm_x, wm_y), wm, fill=t["NUM_C"], font=f_wm)
+    # Marcador elegante de slide (SLIDE 01 / 05)
+    f_slide = fnt("inter", 20, 600)
+    slide_text = f"{slide_num:02d} / {total_slides:02d}"
+    draw.text((W - PAD - 80, PAD + 44), slide_text, fill=t["MUTED"], font=f_slide)
 
     y = PAD + 40
 
     # Badge macrotema
     if macrotema:
-        f_tag = fnt("inter", 24, 700)
+        f_tag = fnt("inter", 22, 700)
         tb = draw.textbbox((0, 0), macrotema.upper(), font=f_tag)
         tag_w = tb[2] - tb[0] + 32
-        tag_h = 36
-        draw_rounded_rect(draw, (INNER, y, INNER + tag_w, y + tag_h), 8, t["TAG_BG"])
-        draw.text((INNER + 16, y + 6), macrotema.upper(), fill=t["TAG_FG"], font=f_tag)
-        y += tag_h + 24
+        tag_h = 34
+        draw_rounded_rect(draw, (INNER, y, INNER + tag_w, y + tag_h), 6, t["TAG_BG"])
+        draw.text((INNER + 16, y + 5), macrotema.upper(), fill=t["TAG_FG"], font=f_tag)
+        
+        # Desenha pequeno diamante decorativo no canto oposto
+        draw_diamond(draw, W - PAD - 120, y + 17, 6, t["ACCENT"])
+        y += tag_h + 30
     else:
         y += 10
 
-    draw.rectangle([(INNER, y), (W - PAD, y + 1)], fill=t["MUTED"])
-    y += 20
+    # Divisor horizontal sutil
+    draw.line([(INNER, y), (W - PAD, y)], fill=t["DIVIDER"], width=1)
+    y += 30
 
     TEXT_W = W - INNER - PAD - 20
-    f_title = fnt("playfair", 82, 800)
-    y = draw_text_wrapped(draw, title, INNER, y, TEXT_W, f_title, t["TITLE_C"], line_spacing=10)
+    
+    # Título Serif Premium
+    f_title = fnt("playfair", 72, 800)
+    y = draw_text_wrapped(draw, title, INNER, y, TEXT_W, f_title, t["TITLE_C"], line_spacing=12)
     y += 24
 
-    draw.rectangle([(INNER, y), (INNER + 72, y + 5)], fill=t["ACCENT"])
-    y += 40
+    # Linha sutil abaixo do título
+    draw.line([(INNER, y), (INNER + 60, y)], fill=t["ACCENT"], width=3)
+    y += 36
 
     if body:
-        f_body      = fnt("inter", 40, 400)
-        f_body_bold = fnt("inter", 40, 700)
-        y = draw_text_rich(draw, body, INNER, y, TEXT_W, f_body, f_body_bold, t["BODY_C"], line_spacing=16)
+        f_body      = fnt("inter", 36, 400)
+        f_body_bold = fnt("inter", 36, 700)
+        y = draw_text_rich(draw, body, INNER, y, TEXT_W, f_body, f_body_bold, t["BODY_C"], line_spacing=18)
 
+    # Footer
     footer_y = H - PAD - 50
-    draw.rectangle([(INNER, footer_y), (W - PAD, footer_y + 1)], fill=t["ACCENT"])
-    f_footer = fnt("inter", 26, 400)
-    draw.text((INNER, footer_y + 12), handle, fill=t["FOOTER_C"], font=f_footer)
+    draw.line([(PAD, footer_y), (W - PAD, footer_y)], fill=t["MUTED"], width=1)
+    
+    f_footer = fnt("inter", 20, 600)
+    draw.text((INNER, footer_y + 16), "GESTAO PATRIMONIAL EXCLUSIVA | WEALTH MANAGEMENT", fill=t["FOOTER_C"], font=f_footer)
+    
     ig_handle = "@igorladeira85"
     hb_ig = draw.textbbox((0, 0), ig_handle, font=f_footer)
     ig_w = hb_ig[2] - hb_ig[0]
-    draw.text((W - PAD - ig_w, footer_y + 12), ig_handle, fill=t["FOOTER_C"], font=f_footer)
-    ig_handle = "@igorladeira85"
-    hb_ig = draw.textbbox((0, 0), ig_handle, font=f_footer)
-    ig_w = hb_ig[2] - hb_ig[0]
-    draw.text((W - PAD - ig_w, footer_y + 12), ig_handle, fill=t["FOOTER_C"], font=f_footer)
+    draw.text((W - PAD - ig_w, footer_y + 16), ig_handle, fill=t["FOOTER_C"], font=f_footer)
 
     return img
 
@@ -245,67 +260,66 @@ def generate_slide_lista(title, items, slide_num, total_slides,
                           style="claro", macrotema="", handle="Igor Ladeira"):
     W, H = 1080, 1080
     t = _theme(style)
-    img = Image.new("RGB", (W, H), t["BG"])
+    
+    img = Image.new("RGB", (W, H))
     draw = ImageDraw.Draw(img)
+    draw_gradient(draw, W, H, t["BG_START"], t["BG_END"])
 
     PAD, INNER = 72, 108
-    draw.rectangle([(PAD, PAD), (PAD + 7, H - PAD)], fill=t["ACCENT"])
+    draw.line([(PAD, PAD + 40), (PAD, H - PAD - 60)], fill=t["MUTED"], width=1)
+
+    f_slide = fnt("inter", 20, 600)
+    slide_text = f"{slide_num:02d} / {total_slides:02d}"
+    draw.text((W - PAD - 80, PAD + 44), slide_text, fill=t["MUTED"], font=f_slide)
 
     y = PAD + 40
-
     if macrotema:
-        f_tag = fnt("inter", 24, 700)
+        f_tag = fnt("inter", 22, 700)
         tb = draw.textbbox((0, 0), macrotema.upper(), font=f_tag)
         tag_w = tb[2] - tb[0] + 32
-        draw_rounded_rect(draw, (INNER, y, INNER + tag_w, y + 36), 8, t["TAG_BG"])
-        draw.text((INNER + 16, y + 6), macrotema.upper(), fill=t["TAG_FG"], font=f_tag)
-        y += 60
+        tag_h = 34
+        draw_rounded_rect(draw, (INNER, y, INNER + tag_w, y + tag_h), 6, t["TAG_BG"])
+        draw.text((INNER + 16, y + 5), macrotema.upper(), fill=t["TAG_FG"], font=f_tag)
+        draw_diamond(draw, W - PAD - 120, y + 17, 6, t["ACCENT"])
+        y += tag_h + 30
 
-    draw.rectangle([(INNER, y), (W - PAD, y + 1)], fill=t["MUTED"])
-    y += 20
+    draw.line([(INNER, y), (W - PAD, y)], fill=t["DIVIDER"], width=1)
+    y += 30
 
     TEXT_W = W - INNER - PAD - 20
-    f_title = fnt("playfair", 62, 800)
-    y = draw_text_wrapped(draw, title, INNER, y, TEXT_W, f_title, t["TITLE_C"], line_spacing=6)
+    f_title = fnt("playfair", 60, 800)
+    y = draw_text_wrapped(draw, title, INNER, y, TEXT_W, f_title, t["TITLE_C"], line_spacing=8)
     y += 16
-    draw.rectangle([(INNER, y), (INNER + 72, y + 4)], fill=t["ACCENT"])
-    y += 28
+    draw.line([(INNER, y), (INNER + 60, y)], fill=t["ACCENT"], width=3)
+    y += 36
 
-    f_num  = fnt("playfair", 30, 700)
     f_itit = fnt("inter", 32, 600)
     f_ibody= fnt("inter", 26, 400)
 
     for item in items:
-        n_text  = item.get("num", "")
-        i_title = item.get("title", "")
-        i_body  = item.get("body", "")
+        # Elegant diamond bullet point instead of numbered badge
+        bullet_x = INNER + 8
+        bullet_y = y + 16
+        draw_diamond(draw, bullet_x, bullet_y, 6, t["ACCENT"])
 
-        nb = draw.textbbox((0, 0), n_text, font=f_num)
-        r = 22
-        cx, cy = INNER + r, y + r
-        draw.ellipse([(cx - r, cy - r), (cx + r, cy + r)], fill=t["ACCENT"])
-        draw.text((cx - (nb[2]-nb[0])//2, cy - (nb[3]-nb[1])//2 - 2), n_text, fill=t["TAG_FG"], font=f_num)
-
-        ix = INNER + r*2 + 16
-        iw = TEXT_W - r*2 - 16
+        ix = INNER + 32
+        iw = TEXT_W - 32
         y_before = y
-        y = draw_text_wrapped(draw, i_title, ix, y, iw, f_itit, t["BODY_C"], line_spacing=3)
-        if i_body:
-            y = draw_text_wrapped(draw, i_body, ix, y + 2, iw, f_ibody, t["MUTED"], line_spacing=3)
-        y = max(y, y_before + r*2 + 10) + 18
+        y = draw_text_wrapped(draw, item.get("title", ""), ix, y, iw, f_itit, t["BODY_C"], line_spacing=4)
+        if item.get("body"):
+            y = draw_text_wrapped(draw, item["body"], ix, y + 4, iw, f_ibody, t["MUTED"], line_spacing=4)
+        y = max(y, y_before + 32) + 24
 
+    # Footer
     footer_y = H - PAD - 50
-    draw.rectangle([(INNER, footer_y), (W - PAD, footer_y + 1)], fill=t["ACCENT"])
-    f_footer = fnt("inter", 26, 400)
-    draw.text((INNER, footer_y + 12), handle, fill=t["FOOTER_C"], font=f_footer)
+    draw.line([(PAD, footer_y), (W - PAD, footer_y)], fill=t["MUTED"], width=1)
+    f_footer = fnt("inter", 20, 600)
+    draw.text((INNER, footer_y + 16), "GESTAO PATRIMONIAL EXCLUSIVA | WEALTH MANAGEMENT", fill=t["FOOTER_C"], font=f_footer)
+    
     ig_handle = "@igorladeira85"
     hb_ig = draw.textbbox((0, 0), ig_handle, font=f_footer)
     ig_w = hb_ig[2] - hb_ig[0]
-    draw.text((W - PAD - ig_w, footer_y + 12), ig_handle, fill=t["FOOTER_C"], font=f_footer)
-    ig_handle = "@igorladeira85"
-    hb_ig = draw.textbbox((0, 0), ig_handle, font=f_footer)
-    ig_w = hb_ig[2] - hb_ig[0]
-    draw.text((W - PAD - ig_w, footer_y + 12), ig_handle, fill=t["FOOTER_C"], font=f_footer)
+    draw.text((W - PAD - ig_w, footer_y + 16), ig_handle, fill=t["FOOTER_C"], font=f_footer)
 
     return img
 
@@ -314,38 +328,46 @@ def generate_slide_grid(title, items, slide_num, total_slides,
                          style="claro", macrotema="", handle="Igor Ladeira"):
     W, H = 1080, 1080
     t = _theme(style)
-    img = Image.new("RGB", (W, H), t["BG"])
+    
+    img = Image.new("RGB", (W, H))
     draw = ImageDraw.Draw(img)
+    draw_gradient(draw, W, H, t["BG_START"], t["BG_END"])
 
     PAD, INNER = 72, 108
-    draw.rectangle([(PAD, PAD), (PAD + 7, H - PAD)], fill=t["ACCENT"])
+    draw.line([(PAD, PAD + 40), (PAD, H - PAD - 60)], fill=t["MUTED"], width=1)
+
+    f_slide = fnt("inter", 20, 600)
+    slide_text = f"{slide_num:02d} / {total_slides:02d}"
+    draw.text((W - PAD - 80, PAD + 44), slide_text, fill=t["MUTED"], font=f_slide)
 
     y = PAD + 40
     if macrotema:
-        f_tag = fnt("inter", 24, 700)
+        f_tag = fnt("inter", 22, 700)
         tb = draw.textbbox((0, 0), macrotema.upper(), font=f_tag)
         tag_w = tb[2] - tb[0] + 32
-        draw_rounded_rect(draw, (INNER, y, INNER + tag_w, y + 36), 8, t["TAG_BG"])
-        draw.text((INNER + 16, y + 6), macrotema.upper(), fill=t["TAG_FG"], font=f_tag)
-        y += 60
+        tag_h = 34
+        draw_rounded_rect(draw, (INNER, y, INNER + tag_w, y + tag_h), 6, t["TAG_BG"])
+        draw.text((INNER + 16, y + 5), macrotema.upper(), fill=t["TAG_FG"], font=f_tag)
+        draw_diamond(draw, W - PAD - 120, y + 17, 6, t["ACCENT"])
+        y += tag_h + 30
 
-    draw.rectangle([(INNER, y), (W - PAD, y + 1)], fill=t["MUTED"])
-    y += 20
+    draw.line([(INNER, y), (W - PAD, y)], fill=t["DIVIDER"], width=1)
+    y += 30
 
     TEXT_W = W - INNER - PAD - 20
     f_title = fnt("playfair", 56, 800)
-    y = draw_text_wrapped(draw, title, INNER, y, TEXT_W, f_title, t["TITLE_C"], line_spacing=4)
+    y = draw_text_wrapped(draw, title, INNER, y, TEXT_W, f_title, t["TITLE_C"], line_spacing=6)
     y += 14
-    draw.rectangle([(INNER, y), (INNER + 72, y + 4)], fill=t["ACCENT"])
-    y += 28
+    draw.line([(INNER, y), (INNER + 60, y)], fill=t["ACCENT"], width=3)
+    y += 36
 
-    GAP    = 20
+    GAP    = 24
     CELL_W = (TEXT_W - GAP) // 2
     n_rows = max(1, (len(items) + 1) // 2)
     avail  = H - PAD - 60 - y
     CELL_H = min(190, max(110, (avail - (n_rows-1)*GAP) // n_rows))
 
-    f_num_big = fnt("playfair", 44, 900)
+    f_num_big = fnt("playfair", 38, 900)
     f_ctitle  = fnt("inter", 26, 600)
     f_cbody   = fnt("inter", 22, 400)
 
@@ -355,30 +377,29 @@ def generate_slide_grid(title, items, slide_num, total_slides,
         cx  = INNER + col * (CELL_W + GAP)
         cy  = y + row * (CELL_H + GAP)
 
-        draw_rounded_rect(draw, (cx, cy, cx + CELL_W, cy + CELL_H), 12, t["CARD_BG"])
-        draw.rectangle([(cx, cy, cx + 6, cy + CELL_H)], fill=t["ACCENT"])
+        # Elegant card with 1px border and very clean accent bar
+        draw_rounded_rect(draw, (cx, cy, cx + CELL_W, cy + CELL_H), 8, t["CARD_BG"], outline=t["DIVIDER"], width=1)
+        draw.rectangle([(cx, cy + 8), (cx + 4, cy + CELL_H - 8)], fill=t["ACCENT"])
 
         n_text = item.get("num", f"{i+1:02d}")
-        nb = draw.textbbox((0, 0), n_text, font=f_num_big)
-        draw.text((cx + 14, cy + 8), n_text, fill=t["ACCENT_LIGHT"], font=f_num_big)
+        draw.text((cx + 16, cy + 10), n_text, fill=t["ACCENT"], font=f_num_big)
 
-        ty = cy + 14 + (nb[3]-nb[1]) + 4
-        ty = draw_text_wrapped(draw, item.get("title",""), cx+14, ty, CELL_W-28, f_ctitle, t["BODY_C"], 2)
+        ty = cy + 10
+        # Offset to prevent overlap with big number
+        ty = draw_text_wrapped(draw, item.get("title", ""), cx + 54, ty, CELL_W - 68, f_ctitle, t["BODY_C"], 2)
         if item.get("body"):
-            draw_text_wrapped(draw, item["body"], cx+14, ty+2, CELL_W-28, f_cbody, t["MUTED"], 2)
+            draw_text_wrapped(draw, item["body"], cx + 54, ty + 2, CELL_W - 68, f_cbody, t["MUTED"], 2)
 
+    # Footer
     footer_y = H - PAD - 50
-    draw.rectangle([(INNER, footer_y), (W - PAD, footer_y + 1)], fill=t["ACCENT"])
-    f_footer = fnt("inter", 26, 400)
-    draw.text((INNER, footer_y + 12), handle, fill=t["FOOTER_C"], font=f_footer)
+    draw.line([(PAD, footer_y), (W - PAD, footer_y)], fill=t["MUTED"], width=1)
+    f_footer = fnt("inter", 20, 600)
+    draw.text((INNER, footer_y + 16), "GESTAO PATRIMONIAL EXCLUSIVA | WEALTH MANAGEMENT", fill=t["FOOTER_C"], font=f_footer)
+    
     ig_handle = "@igorladeira85"
     hb_ig = draw.textbbox((0, 0), ig_handle, font=f_footer)
     ig_w = hb_ig[2] - hb_ig[0]
-    draw.text((W - PAD - ig_w, footer_y + 12), ig_handle, fill=t["FOOTER_C"], font=f_footer)
-    ig_handle = "@igorladeira85"
-    hb_ig = draw.textbbox((0, 0), ig_handle, font=f_footer)
-    ig_w = hb_ig[2] - hb_ig[0]
-    draw.text((W - PAD - ig_w, footer_y + 12), ig_handle, fill=t["FOOTER_C"], font=f_footer)
+    draw.text((W - PAD - ig_w, footer_y + 16), ig_handle, fill=t["FOOTER_C"], font=f_footer)
 
     return img
 
